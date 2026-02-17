@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Helpdesk RAG Demo</title>
+  <style>
+    body { font-family: system-ui, Arial; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 90px; }
+    button { padding: 10px 14px; margin-top: 8px; }
+    pre { background: #f6f6f6; padding: 12px; white-space: pre-wrap; }
+    .row { display: flex; gap: 12px; align-items: center; }
+    .small { color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h2>Helpdesk RAG Demo</h2>
+  <p class="small">Asks your Vertex RAG corpus, then uses Gemini to answer with citations.</p>
+
+  <textarea id="q" placeholder="Ask a support question..."></textarea>
+  <div class="row">
+    <button onclick="ask()">Ask</button>
+    <span id="status" class="small"></span>
+  </div>
+
+  <h3>Answer</h3>
+  <pre id="answer"></pre>
+
+  <h3>Top retrieved contexts (truncated)</h3>
+  <div id="ctx"></div>
+
+<script>
+async function ask() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  document.getElementById('status').textContent = "Working...";
+  document.getElementById('answer').textContent = "";
+  document.getElementById('ctx').innerHTML = "";
+
+  const res = await fetch("/api/ask", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({question: q})
+  });
+
+  const data = await res.json();
+  document.getElementById('status').textContent = "";
+
+  if (!res.ok) {
+    document.getElementById('answer').textContent = data.error || JSON.stringify(data, null, 2);
+    return;
+  }
+
+  document.getElementById('answer').textContent = data.answer || "(no answer)";
+
+  (data.contexts || []).forEach((c, i) => {
+    const div = document.createElement("div");
+    div.innerHTML = `<pre>[${i+1}] ${c.sourceUri || "unknown"}\n\n${c.text || ""}</pre>`;
+    document.getElementById('ctx').appendChild(div);
+  });
+}
+</script>
+</body>
+</html>
