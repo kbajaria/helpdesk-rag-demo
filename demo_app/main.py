@@ -24,7 +24,7 @@ GEMINI_MODEL = os.getenv(
     f"projects/{PROJECT_ID}/locations/global/publishers/google/models/gemini-2.5-flash"
 )
 
-TOP_K = int(os.getenv("TOP_K", "4"))
+TOP_K = int(os.getenv("TOP_K", "12"))
 
 # ---- Auth session ----
 creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
@@ -90,12 +90,22 @@ def generate_answer(question: str, contexts: List[Dict[str, Any]]) -> str:
 
     context_block = "\n\n".join(ctx_lines) if ctx_lines else "(No relevant context found.)"
 
-    system = (
-        "You are a helpdesk support assistant.\n"
-        "Answer ONLY using the provided CONTEXT. If the answer isn't in the context, say you don't know.\n"
-        "When you use a fact, cite it with [1], [2], etc. matching the context items.\n"
-        "End with a short 'Sources:' list containing the cited bracket numbers."
-    )
+    system = """
+        You are a helpdesk intelligence assistant. Write a clear, human-readable report.
+
+        Rules:
+        - Use the provided CONTEXT as evidence and cite with [1], [2], etc.
+        - If something is not supported by context, label it as "Hypothesis" or "General guidance".
+        - Prefer specific phrases/errors/URLs found in the context.
+
+        Output format (use these headings):
+        1) Executive summary (2-3 bullets)
+        2) What environments are mentioned (UAT / Prod / other)
+        3) Common error patterns (grouped by environment)
+        4) Suggested triage questions (max 6)
+        5) Suggested next actions (max 6)
+        6) Evidence (list the citations with 1-line description)
+        """
 
     prompt = f"QUESTION:\n{question}\n\nCONTEXT:\n{context_block}"
 
@@ -106,8 +116,8 @@ def generate_answer(question: str, contexts: List[Dict[str, Any]]) -> str:
             {"role": "user", "parts": [{"text": prompt}]}
         ],
         "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 512,
+            "temperature": 0.3,
+            "maxOutputTokens": 4000,
         },
     }
 
@@ -118,7 +128,10 @@ def generate_answer(question: str, contexts: List[Dict[str, Any]]) -> str:
     data = r.json()
     # Typical response path: candidates[0].content.parts[0].text
     try:
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        cand = (data.get("candidates") or [{}])[0]
+        parts = (cand.get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts).strip() or str(data)
+
     except Exception:
         return str(data)
 

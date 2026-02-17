@@ -2,61 +2,244 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Helpdesk RAG Demo</title>
   <style>
-    body { font-family: system-ui, Arial; max-width: 900px; margin: 24px auto; padding: 0 16px; }
-    textarea { width: 100%; height: 90px; }
-    button { padding: 10px 14px; margin-top: 8px; }
-    pre { background: #f6f6f6; padding: 12px; white-space: pre-wrap; }
-    .row { display: flex; gap: 12px; align-items: center; }
-    .small { color: #666; font-size: 12px; }
+    :root {
+      --bg: #ffffff;
+      --panel: #f6f6f6;
+      --border: #e6e6e6;
+      --text: #111;
+      --muted: #666;
+      --accent: #0b57d0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      max-width: 960px;
+      margin: 28px auto;
+      padding: 0 18px 48px;
+      line-height: 1.35;
+    }
+
+    h1 { font-size: 36px; margin: 0 0 10px; }
+    h2 { margin: 26px 0 10px; font-size: 22px; }
+    .sub { color: var(--muted); margin: 0 0 18px; }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+      box-shadow: 0 1px 0 rgba(0,0,0,.03);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      line-height: 1.35;
+      outline: none;
+    }
+
+    textarea:focus { border-color: #bcd2ff; box-shadow: 0 0 0 3px rgba(11,87,208,.10); }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* Answer box: always scrollable, never cut off */
+    .answer-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 420px;   /* <-- scroll height */
+      line-height: 1.45;
+      font-size: 14.5px;
+    }
+
+    .pill {
+      display: inline-block;
+      font-size: 12px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+    }
+
+    details {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      margin-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    pre.ctx {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 220px;
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .footer-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
   </style>
 </head>
-<body>
-  <h2>Helpdesk RAG Demo</h2>
-  <p class="small">Asks your Vertex RAG corpus, then uses Gemini to answer with citations.</p>
 
-  <textarea id="q" placeholder="Ask a support question..."></textarea>
-  <div class="row">
-    <button onclick="ask()">Ask</button>
-    <span id="status" class="small"></span>
+<body>
+  <h1>Helpdesk RAG Demo</h1>
+  <p class="sub">Ask your Vertex RAG corpus, then use Gemini to produce a cited report.</p>
+
+  <div class="card">
+    <textarea id="q" placeholder="Ask a support question..."></textarea>
+    <div class="row">
+      <button id="askBtn" class="primary" onclick="ask()">Ask</button>
+      <span id="status" class="status"></span>
+      <span id="meta" class="pill" style="display:none;"></span>
+    </div>
+    <div class="footer-note">
+      Tip: Try “Summarize the top 5 recurring error messages…” or “Do TML manage the logins or Finova?”
+    </div>
   </div>
 
-  <h3>Answer</h3>
-  <pre id="answer"></pre>
+  <h2>Answer</h2>
+  <div id="answer" class="answer-box"></div>
 
-  <h3>Top retrieved contexts (truncated)</h3>
+  <h2>Retrieved contexts</h2>
   <div id="ctx"></div>
 
 <script>
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg || "";
+}
+
+function setMeta(msg) {
+  const el = document.getElementById('meta');
+  if (!msg) { el.style.display = "none"; el.textContent = ""; return; }
+  el.style.display = "inline-block";
+  el.textContent = msg;
+}
+
 async function ask() {
   const q = document.getElementById('q').value.trim();
   if (!q) return;
-  document.getElementById('status').textContent = "Working...";
-  document.getElementById('answer').textContent = "";
-  document.getElementById('ctx').innerHTML = "";
 
-  const res = await fetch("/api/ask", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({question: q})
-  });
+  const askBtn = document.getElementById('askBtn');
+  const answerEl = document.getElementById('answer');
+  const ctxEl = document.getElementById('ctx');
 
-  const data = await res.json();
-  document.getElementById('status').textContent = "";
+  askBtn.disabled = true;
+  setStatus("Working…");
+  setMeta("");
 
-  if (!res.ok) {
-    document.getElementById('answer').textContent = data.error || JSON.stringify(data, null, 2);
-    return;
+  answerEl.textContent = "";
+  ctxEl.innerHTML = "";
+
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: q})
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      answerEl.textContent = data.error || JSON.stringify(data, null, 2);
+      setStatus("");
+      askBtn.disabled = false;
+      return;
+    }
+
+    const answerText = data.answer || "(no answer)";
+    answerEl.textContent = answerText;
+
+    const contexts = data.contexts || [];
+    setMeta(`${contexts.length} context(s)`);
+
+    contexts.forEach((c, i) => {
+      const src = c.sourceUri || "unknown";
+      const txt = c.text || "";
+      const score = (c.score !== undefined && c.score !== null) ? ` • score ${c.score}` : "";
+
+      const d = document.createElement("details");
+      d.open = (i < 2); // open first 2 by default
+      d.innerHTML = `
+        <summary>[${i+1}] ${src}${score}</summary>
+        <pre class="ctx">${escapeHtml(txt)}</pre>
+      `;
+      ctxEl.appendChild(d);
+    });
+
+    setStatus("");
+  } catch (e) {
+    answerEl.textContent = String(e);
+    setStatus("");
+  } finally {
+    askBtn.disabled = false;
   }
+}
 
-  document.getElementById('answer').textContent = data.answer || "(no answer)";
-
-  (data.contexts || []).forEach((c, i) => {
-    const div = document.createElement("div");
-    div.innerHTML = `<pre>[${i+1}] ${c.sourceUri || "unknown"}\n\n${c.text || ""}</pre>`;
-    document.getElementById('ctx').appendChild(div);
-  });
+// Simple HTML escape to safely render context text in <pre>
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 </script>
 </body>
