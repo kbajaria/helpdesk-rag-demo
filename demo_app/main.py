@@ -71,6 +71,8 @@ def retrieve_contexts(question: str, top_k: int = 4) -> List[Dict[str, Any]]:
 
     data = r.json()
     return (data.get("contexts") or {}).get("contexts") or []
+    
+# Comment
 
 def generate_answer(question: str, contexts: List[Dict[str, Any]]) -> str:
     """
